@@ -1,0 +1,25 @@
+server:
+  port: ${PORT:4000}
+
+spring:
+  application:
+    name: hr-intel-backend
+
+app:
+  cors-origin: ${CORS_ORIGIN:http://localhost:5173}
+  ml-service-url: ${ML_SERVICE_URL:http://localhost:4100}
+  supabase:
+    url: ${SUPABASE_URL}
+    anon-key: ${SUPABASE_ANON_KEY}
+    service-role-key: ${SUPABASE_SERVICE_ROLE_KEY}
+  ollama:
+    base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:llama3.1}
+  seed:
+    admin-password: ${SEED_ADMIN_PASSWORD:Admin123!}
+    employee-password: ${SEED_EMPLOYEE_PASSWORD:Employee123!}
+
+logging:
+  level:
+    com.hrintel.backend: info
+    org.springframework.web: info

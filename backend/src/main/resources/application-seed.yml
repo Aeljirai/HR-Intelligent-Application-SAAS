@@ -1,0 +1,8 @@
+# Active only via -Dspring-boot.run.profiles=seed (or --spring.profiles.active=seed
+# on the packaged jar). SeedRunner is a one-shot CommandLineRunner, not a web
+# service, so skip starting the embedded Tomcat server entirely — otherwise
+# it would try to bind the same port the "real" backend instance already
+# holds when run via `docker compose exec`.
+spring:
+  main:
+    web-application-type: none

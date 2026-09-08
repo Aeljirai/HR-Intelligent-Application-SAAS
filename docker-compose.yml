@@ -1,0 +1,83 @@
+name: hr-intelligence-system
+
+services:
+  ml-service:
+    build: ./ml-service
+    environment:
+      PORT: 4100
+      CORS_ORIGIN: http://backend:4000
+    expose:
+      - "4100"
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://localhost:4100/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: ./backend
+    environment:
+      PORT: 4000
+      CORS_ORIGIN: http://localhost:5173
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      ML_SERVICE_URL: http://ml-service:4100
+      # host.docker.internal reaches the Ollama server running on the host
+      # machine (Docker Desktop only) — the container's own "localhost"
+      # would refer to the container itself.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Admin123!}
+      SEED_EMPLOYEE_PASSWORD: ${SEED_EMPLOYEE_PASSWORD:-Employee123!}
+    ports:
+      - "4000:4000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      ml-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_SUPABASE_URL: ${SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+        # Browser-reachable address for the backend — the host-mapped port
+        # above, not the internal `backend:4000` Docker DNS name.
+        VITE_API_BASE_URL: http://localhost:4000
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  # n8n automation — daily HR report (employee status/performance/contract
+  # type + timesheet) emailed to HR as Excel attachments. See n8n/README.md.
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_WEBHOOK_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: ${TZ:-UTC}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      # Reused so n8n's HTTP Request nodes can query Supabase directly —
+      # same values as the backend service above.
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      HR_ADMIN_EMAIL: ${HR_ADMIN_EMAIL:-hr-admin@company.com}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-hr-automation@company.com}
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:

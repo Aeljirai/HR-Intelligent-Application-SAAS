@@ -1,0 +1,239 @@
+{
+  "name": "Daily HR Report (Status, Performance, Contract, Timesheet)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 7 * * 1-5" }
+          ]
+        }
+      },
+      "id": "trigger",
+      "name": "Daily 7AM Trigger (Weekdays)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-220, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst day = now.getDay(); // 0 Sun ... 6 Sat\nlet back = 1;\nif (day === 1) back = 3; // Monday -> report on Friday\nif (day === 0) back = 2; // Sunday (manual run) -> report on Friday\nconst reportDate = new Date(now);\nreportDate.setDate(now.getDate() - back);\nconst iso = reportDate.toISOString().slice(0, 10);\nconst label = reportDate.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });\nreturn [{ json: { reportDate: iso, reportDateLabel: label } }];"
+      },
+      "id": "config",
+      "name": "Compute Report Date",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collapses department fan-out to exactly one item so downstream HTTP\n// Request nodes run once, not once per department. $('Get Departments')\n// still exposes the full list to later Code nodes regardless of this.\nreturn [{ json: { ready: true } }];"
+      },
+      "id": "departmentsReady",
+      "name": "Departments Ready",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [120, 340]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/employees",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "select", "value": "id,full_name,email,job_title,seniority,contract_type,status,performance_score,department_id" },
+            { "name": "order", "value": "full_name.asc" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "getEmployees",
+      "name": "Get Employees",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 140]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/departments",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "select", "value": "id,name" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "getDepartments",
+      "name": "Get Departments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 340]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/attendance",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "select", "value": "employee_id,date,status,check_in,check_out,hours_worked" },
+            { "name": "date", "value": "=eq.{{ $('Compute Report Date').item.json.reportDate }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}" },
+            { "name": "Authorization", "value": "=Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "getAttendance",
+      "name": "Get Attendance",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [240, 560],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const departments = $('Get Departments').all().map(i => i.json);\nconst deptById = new Map(departments.map(d => [d.id, d.name]));\n\nreturn $input.all().map(item => {\n  const e = item.json;\n  return {\n    json: {\n      'Full Name': e.full_name,\n      'Email': e.email,\n      'Department': deptById.get(e.department_id) || 'Unknown',\n      'Job Title': e.job_title,\n      'Seniority': e.seniority,\n      'Contract Type': e.contract_type,\n      'Status': e.status,\n      'Performance Score': e.performance_score,\n    },\n  };\n});"
+      },
+      "id": "buildEmployeeRows",
+      "name": "Build Employee Status Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "const employees = $('Get Employees').all().map(i => i.json);\nconst departments = $('Get Departments').all().map(i => i.json);\nconst deptById = new Map(departments.map(d => [d.id, d.name]));\nconst empById = new Map(employees.map(e => [e.id, e]));\nconst reportDate = $('Compute Report Date').item.json.reportDate;\n\n// 'alwaysOutputData' on Get Attendance means a day with zero attendance\n// rows still delivers one placeholder item here (no employee_id) instead\n// of being skipped entirely — filter it out before mapping real rows.\nconst rows = $input.all()\n  .filter((item) => item.json && item.json.employee_id)\n  .map((item) => {\n    const a = item.json;\n    const emp = empById.get(a.employee_id);\n    return {\n      json: {\n        'Full Name': emp ? emp.full_name : 'Unknown',\n        'Department': emp ? (deptById.get(emp.department_id) || 'Unknown') : 'Unknown',\n        'Date': a.date,\n        'Status': a.status,\n        'Check In': a.check_in,\n        'Check Out': a.check_out,\n        'Hours Worked': a.hours_worked,\n      },\n    };\n  });\n\n// Keep at least one row so the XLSX/email steps downstream always run,\n// even when the report date genuinely has no attendance data yet.\nif (rows.length === 0) {\n  return [{\n    json: {\n      'Full Name': '',\n      'Department': '',\n      'Date': reportDate,\n      'Status': 'No attendance records for this date',\n      'Check In': '',\n      'Check Out': '',\n      'Hours Worked': '',\n    },\n  }];\n}\nreturn rows;"
+      },
+      "id": "buildTimesheetRows",
+      "name": "Build Timesheet Rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 560]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "employees",
+        "options": {
+          "fileName": "=employee-status-report-{{ $('Compute Report Date').item.json.reportDate }}.xlsx",
+          "sheetName": "Employee Status"
+        }
+      },
+      "id": "toXlsxEmployees",
+      "name": "Convert Employees to XLSX",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [680, 140]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "timesheet",
+        "options": {
+          "fileName": "=timesheet-report-{{ $('Compute Report Date').item.json.reportDate }}.xlsx",
+          "sheetName": "Timesheet"
+        }
+      },
+      "id": "toXlsxTimesheet",
+      "name": "Convert Timesheet to XLSX",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [680, 560]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "mergeFiles",
+      "name": "Combine Attachments",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [900, 340]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM_EMAIL }}",
+        "toEmail": "={{ $env.HR_ADMIN_EMAIL }}",
+        "subject": "=Daily HR Report — {{ $('Compute Report Date').item.json.reportDateLabel }}",
+        "emailFormat": "html",
+        "html": "=<p>Attached for <strong>{{ $('Compute Report Date').item.json.reportDateLabel }}</strong>:</p><ul><li><strong>Employee status report</strong> — status, performance score, and contract type for every employee.</li><li><strong>Timesheet report</strong> — worked hours for every employee.</li></ul><p>This is an automated message from the HR Intelligence System.</p>",
+        "attachments": "employees,timesheet",
+        "options": {}
+      },
+      "id": "sendEmail",
+      "name": "Email HR Admin",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1120, 340],
+      "credentials": {
+        "smtp": { "id": "REPLACE_ME", "name": "SMTP account" }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 7AM Trigger (Weekdays)": {
+      "main": [[{ "node": "Compute Report Date", "type": "main", "index": 0 }]]
+    },
+    "Compute Report Date": {
+      "main": [[
+        { "node": "Get Departments", "type": "main", "index": 0 }
+      ]]
+    },
+    "Get Departments": {
+      "main": [[
+        { "node": "Departments Ready", "type": "main", "index": 0 }
+      ]]
+    },
+    "Departments Ready": {
+      "main": [[
+        { "node": "Get Employees", "type": "main", "index": 0 },
+        { "node": "Get Attendance", "type": "main", "index": 0 }
+      ]]
+    },
+    "Get Employees": {
+      "main": [[{ "node": "Build Employee Status Rows", "type": "main", "index": 0 }]]
+    },
+    "Get Attendance": {
+      "main": [[{ "node": "Build Timesheet Rows", "type": "main", "index": 0 }]]
+    },
+    "Build Employee Status Rows": {
+      "main": [[{ "node": "Convert Employees to XLSX", "type": "main", "index": 0 }]]
+    },
+    "Build Timesheet Rows": {
+      "main": [[{ "node": "Convert Timesheet to XLSX", "type": "main", "index": 0 }]]
+    },
+    "Convert Employees to XLSX": {
+      "main": [[{ "node": "Combine Attachments", "type": "main", "index": 0 }]]
+    },
+    "Convert Timesheet to XLSX": {
+      "main": [[{ "node": "Combine Attachments", "type": "main", "index": 1 }]]
+    },
+    "Combine Attachments": {
+      "main": [[{ "node": "Email HR Admin", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}
