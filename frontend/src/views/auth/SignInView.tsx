@@ -1,21 +1,24 @@
 import { useState, type FormEvent } from 'react';
-import { Languages } from 'lucide-react';
+import { Languages, Check } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { useLocaleStore } from '@/store/localeStore';
-import { useT } from '@/lib/i18n';
+import { useT, useDict } from '@/lib/i18n';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
 
 const DEMO_ACCOUNTS = [
-  { label: 'Admin', email: 'admin@hr.com', password: 'Admin123!' },
-  { label: 'Manager', email: 'jordan.blake@company.com', password: 'Admin123!' },
-  { label: 'Employee', email: 'sarah.chen@company.com', password: 'Employee123!' },
+  { label: 'Admin', name: 'Hicham Alaoui', email: 'admin@hr.com', password: 'Admin123!' },
+  { label: 'Manager', name: 'Mehdi Cherkaoui', email: 'mehdi.cherkaoui@company.com', password: 'Admin123!' },
+  { label: 'Employee', name: 'Btissam Tazi', email: 'sarah.chen@company.com', password: 'Employee123!' },
 ];
+
+const PRICING_PLAN_KEYS = ['startup', 'enterprise', 'elite'] as const;
 
 export function SignInView() {
   const { signIn, signUp, error, status } = useAuthStore();
   const { locale, setLocale } = useLocaleStore();
   const t = useT();
+  const dict = useDict();
   const [mode, setMode] = useState<'sign_in' | 'sign_up'>('sign_in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -36,7 +39,7 @@ export function SignInView() {
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <div className="relative flex min-h-screen flex-col items-center gap-12 bg-slate-50 px-4 py-16">
       <div className="absolute right-4 top-4 flex items-center gap-1.5 text-slate-400">
         <Languages size={14} />
         <div className="flex overflow-hidden rounded-md border border-slate-200 text-[11px] font-medium">
@@ -78,7 +81,7 @@ export function SignInView() {
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    placeholder="Jamie Rivera"
+                    placeholder="Yassine El Amrani"
                   />
                 </label>
               )}
@@ -134,15 +137,72 @@ export function SignInView() {
                 }}
                 className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-4 py-3 text-left text-sm hover:border-blue-300 hover:bg-blue-50"
               >
-                <span>
-                  <span className="font-medium text-slate-700">{acct.label}</span>
-                  <span className="ml-2 text-slate-400">{acct.email}</span>
+                <span className="flex flex-col">
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium text-slate-700">{acct.name}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">{acct.label}</span>
+                  </span>
+                  <span className="text-slate-400">{acct.email}</span>
                 </span>
                 <span className="text-xs text-blue-600">{t('signIn.signInArrow')}</span>
               </button>
             ))}
           </div>
           <p className="mt-2 text-xs text-slate-400">{t('signIn.demoFootnote')}</p>
+        </div>
+      </div>
+
+      <div className="w-full max-w-5xl">
+        <div className="text-center">
+          <h2 className="font-display text-2xl text-slate-800">{t('pricing.title')}</h2>
+          <p className="mt-2 text-sm text-slate-500">{t('pricing.subtitle')}</p>
+        </div>
+
+        <div className="mt-8 grid gap-6 md:grid-cols-3">
+          {PRICING_PLAN_KEYS.map((key) => {
+            const plan = dict.pricing.plans[key];
+            const popular = key === 'enterprise';
+            const custom = key === 'elite';
+            return (
+              <div
+                key={key}
+                className={cn(
+                  'relative flex flex-col rounded-2xl border bg-white p-6',
+                  popular ? 'border-blue-500 shadow-lg ring-1 ring-blue-100' : 'border-slate-200 shadow-sm'
+                )}
+              >
+                {popular && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-blue-600 px-3 py-1 text-[11px] font-medium text-white">
+                    {t('pricing.popularBadge')}
+                  </span>
+                )}
+                <h3 className="font-display text-lg text-slate-800">{plan.name}</h3>
+                <p className="mt-1 text-sm text-slate-500">{plan.tagline}</p>
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="font-display text-3xl text-slate-900">{plan.price}</span>
+                  <span className="text-sm text-slate-400">{plan.priceSuffix}</span>
+                </div>
+                <ul className="mt-6 flex-1 space-y-2 text-sm text-slate-600">
+                  {plan.benefits.map((benefit) => (
+                    <li key={benefit} className="flex items-start gap-2">
+                      <Check size={16} className="mt-0.5 shrink-0 text-blue-600" />
+                      <span>{benefit}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  variant={popular ? 'primary' : 'secondary'}
+                  className="mt-6 w-full"
+                  onClick={() => {
+                    setMode('sign_up');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                >
+                  {custom ? t('pricing.ctaCustom') : t('pricing.cta')}
+                </Button>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

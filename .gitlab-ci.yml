@@ -1,0 +1,232 @@
+# GitLab CI/CD pipeline for hr-intelligence-system
+#
+# Services in this repo:
+#   - frontend    React + Vite, built/run with Bun, served by nginx
+#   - backend     Spring Boot (Java 21 / Maven), real JUnit test suite
+#   - ml-service  FastAPI (Python 3.12), real pytest suite (tests/test_smoke.py)
+#
+# frontend has no unit-test suite (no vitest/jest files exist) — its "test"
+# job runs `typecheck` (tsc --noEmit), the same gate the existing
+# .github/workflows/ci.yml uses. backend and ml-service both have real tests
+# (JUnit under src/test/java, pytest under tests/), run via `mvn test` and
+# `pytest` respectively.
+
+stages:
+  - test
+  - build
+  - deliver
+  - deploy
+
+variables:
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_TLS_VERIFY: "1"
+  DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  # Registry paths for each service image, under this project's own registry.
+  BACKEND_IMAGE: $CI_REGISTRY_IMAGE/backend
+  FRONTEND_IMAGE: $CI_REGISTRY_IMAGE/frontend
+  ML_SERVICE_IMAGE: $CI_REGISTRY_IMAGE/ml-service
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+
+# ---------------------------------------------------------------------------
+# test stage — three jobs in the same stage run in parallel automatically
+# ---------------------------------------------------------------------------
+
+test:frontend:
+  stage: test
+  image: oven/bun:1
+  cache:
+    key: frontend-bun
+    paths:
+      - frontend/node_modules
+  script:
+    - cd frontend
+    - bun install --frozen-lockfile
+    - bun run typecheck
+    - node scripts/verify-imports.mjs
+
+test:backend:
+  stage: test
+  image: maven:3.9-eclipse-temurin-21
+  cache:
+    key: backend-maven
+    paths:
+      - .m2/repository
+  variables:
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  script:
+    - cd backend
+    - ./mvnw -B -ntp test
+  artifacts:
+    when: always
+    reports:
+      junit: backend/target/surefire-reports/TEST-*.xml
+
+test:ml-service:
+  stage: test
+  image: python:3.12-slim
+  cache:
+    key: ml-service-pip
+    paths:
+      - .cache/pip
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  script:
+    - cd ml-service
+    - pip install -r requirements-dev.txt
+    - pytest -v
+
+# ---------------------------------------------------------------------------
+# build stage — docker build only, image saved as a job artifact (.tar) so
+# the deliver stage (auth + push) is a genuinely separate step, not just the
+# same job split in two)
+# ---------------------------------------------------------------------------
+
+.docker_build:
+  stage: build
+  image: docker:24.0
+  services:
+    - docker:24.0-dind
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+
+build:backend:
+  extends: .docker_build
+  needs: ["test:backend"]
+  script:
+    - docker build -t $BACKEND_IMAGE:$CI_COMMIT_SHA ./backend
+    - docker save $BACKEND_IMAGE:$CI_COMMIT_SHA -o backend-image.tar
+  artifacts:
+    paths:
+      - backend-image.tar
+    expire_in: 1 hour
+
+build:frontend:
+  extends: .docker_build
+  needs: ["test:frontend"]
+  script:
+    - >
+      docker build -t $FRONTEND_IMAGE:$CI_COMMIT_SHA ./frontend
+      --build-arg VITE_SUPABASE_URL="$VITE_SUPABASE_URL"
+      --build-arg VITE_SUPABASE_ANON_KEY="$VITE_SUPABASE_ANON_KEY"
+      --build-arg VITE_API_BASE_URL="$VITE_API_BASE_URL"
+    - docker save $FRONTEND_IMAGE:$CI_COMMIT_SHA -o frontend-image.tar
+  artifacts:
+    paths:
+      - frontend-image.tar
+    expire_in: 1 hour
+
+build:ml-service:
+  extends: .docker_build
+  needs: ["test:ml-service"]
+  script:
+    - docker build -t $ML_SERVICE_IMAGE:$CI_COMMIT_SHA ./ml-service
+    - docker save $ML_SERVICE_IMAGE:$CI_COMMIT_SHA -o ml-service-image.tar
+  artifacts:
+    paths:
+      - ml-service-image.tar
+    expire_in: 1 hour
+
+# ---------------------------------------------------------------------------
+# deliver stage — load the saved image, authenticate to the GitLab Container
+# Registry with the built-in job credentials, and push it
+# ---------------------------------------------------------------------------
+
+.docker_deliver:
+  stage: deliver
+  image: docker:24.0
+  services:
+    - docker:24.0-dind
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+
+deliver:backend:
+  extends: .docker_deliver
+  needs: ["build:backend"]
+  script:
+    - docker load -i backend-image.tar
+    - docker push $BACKEND_IMAGE:$CI_COMMIT_SHA
+    - docker tag $BACKEND_IMAGE:$CI_COMMIT_SHA $BACKEND_IMAGE:latest
+    - docker push $BACKEND_IMAGE:latest
+
+deliver:frontend:
+  extends: .docker_deliver
+  needs: ["build:frontend"]
+  script:
+    - docker load -i frontend-image.tar
+    - docker push $FRONTEND_IMAGE:$CI_COMMIT_SHA
+    - docker tag $FRONTEND_IMAGE:$CI_COMMIT_SHA $FRONTEND_IMAGE:latest
+    - docker push $FRONTEND_IMAGE:latest
+
+deliver:ml-service:
+  extends: .docker_deliver
+  needs: ["build:ml-service"]
+  script:
+    - docker load -i ml-service-image.tar
+    - docker push $ML_SERVICE_IMAGE:$CI_COMMIT_SHA
+    - docker tag $ML_SERVICE_IMAGE:$CI_COMMIT_SHA $ML_SERVICE_IMAGE:latest
+    - docker push $ML_SERVICE_IMAGE:latest
+
+# ---------------------------------------------------------------------------
+# deploy stage — authenticate to the production environment with a service
+# account JSON key, then pull the freshly delivered images and redeploy.
+#
+# Written for a GCP Compute Engine VM reached via `gcloud compute ssh`,
+# because a "Service Account JSON key" is GCP-specific — there is nothing in
+# this repo (no Kubernetes manifests, no Cloud Run config) that pins down the
+# actual target product, so this is the most direct mapping onto the
+# docker-compose setup already in the repo. Swap this job's body for your
+# real target (GKE `kubectl`/`helm`, Cloud Run `gcloud run deploy`, a plain
+# SSH key onto a non-GCP host, etc.) if it isn't a Compute Engine VM.
+#
+# IMPORTANT: the production host's docker-compose.yml must reference these
+# images by tag (`image: $BACKEND_IMAGE:...`) rather than `build:`, or
+# `docker compose up -d` will just rebuild from source instead of pulling.
+# The docker-compose.yml at the repo root currently uses `build:` for local
+# dev — you'll need a docker-compose.prod.yml (or an override) on the server
+# that uses `image:` instead.
+# ---------------------------------------------------------------------------
+
+deploy:production:
+  stage: deploy
+  image: google/cloud-sdk:slim
+  needs:
+    - deliver:backend
+    - deliver:frontend
+    - deliver:ml-service
+  environment:
+    name: production
+    url: https://$PRODUCTION_HOST
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+  script:
+    # GCP_SERVICE_ACCOUNT_KEY must be a "File" type CI/CD variable (holding
+    # the full service-account JSON key) — GitLab then exposes its VALUE as
+    # a path to a temp file containing that JSON, so no manual write-to-disk
+    # step or cleanup is needed here.
+    - gcloud auth activate-service-account --key-file="$GCP_SERVICE_ACCOUNT_KEY"
+    - gcloud config set project "$GCP_PROJECT_ID"
+    # Every $VAR below is expanded locally, by this job's shell, before the
+    # resulting literal command string is sent over SSH — the remote host
+    # never needs to know CI_REGISTRY_PASSWORD or any other CI variable.
+    - |
+      gcloud compute ssh "$GCP_INSTANCE_NAME" --zone="$GCP_ZONE" --command="
+        set -e
+        echo '$CI_REGISTRY_PASSWORD' | docker login '$CI_REGISTRY' -u '$CI_REGISTRY_USER' --password-stdin
+        docker pull $BACKEND_IMAGE:$CI_COMMIT_SHA
+        docker pull $FRONTEND_IMAGE:$CI_COMMIT_SHA
+        docker pull $ML_SERVICE_IMAGE:$CI_COMMIT_SHA
+        cd $PRODUCTION_APP_DIR
+        BACKEND_IMAGE_TAG=$CI_COMMIT_SHA FRONTEND_IMAGE_TAG=$CI_COMMIT_SHA ML_SERVICE_IMAGE_TAG=$CI_COMMIT_SHA \
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+      "

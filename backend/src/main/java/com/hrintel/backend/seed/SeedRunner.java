@@ -108,12 +108,12 @@ public class SeedRunner implements CommandLineRunner {
 
     private static final List<DemoAccount> DEMO_ACCOUNTS = List.of(
             new DemoAccount("admin@hr.com", "Hicham Alaoui", "admin", null),
-            new DemoAccount("jordan.blake@company.com", "Mehdi Cherkaoui", "manager", "Engineering"),
+            new DemoAccount("mehdi.cherkaoui@company.com", "Mehdi Cherkaoui", "manager", "Engineering"),
             new DemoAccount("sarah.chen@company.com", "Btissam Tazi", "employee", "Engineering"),
-            new DemoAccount("marcus.reyes@company.com", "Marcus Reyes", "employee", "Sales"),
-            new DemoAccount("priya.desai@company.com", "Priya Desai", "employee", "Marketing"),
-            new DemoAccount("wei.zhang@company.com", "Wei Zhang", "employee", "Customer Support"),
-            new DemoAccount("elena.moreau@company.com", "Elena Moreau", "employee", "Finance")
+            new DemoAccount("marcus.reyes@company.com", "Yassine Naciri", "employee", "Sales"),
+            new DemoAccount("priya.desai@company.com", "Ghita El Fassi", "employee", "Marketing"),
+            new DemoAccount("wei.zhang@company.com", "Zakaria Guerraoui", "employee", "Customer Support"),
+            new DemoAccount("elena.moreau@company.com", "Karima Belkadi", "employee", "Finance")
     );
 
     @Override
@@ -223,11 +223,11 @@ public class SeedRunner implements CommandLineRunner {
         // sarah.chen@company.com etc. actually exist as employee rows.
         List<Map.Entry<String, String>> overrides = List.of(
                 Map.entry("Btissam Tazi", "sarah.chen@company.com"),
-                Map.entry("Marcus Reyes", "marcus.reyes@company.com"),
-                Map.entry("Priya Desai", "priya.desai@company.com"),
-                Map.entry("Wei Zhang", "wei.zhang@company.com"),
-                Map.entry("Elena Moreau", "elena.moreau@company.com"),
-                Map.entry("Mehdi Cherkaoui", "jordan.blake@company.com")
+                Map.entry("Yassine Naciri", "marcus.reyes@company.com"),
+                Map.entry("Ghita El Fassi", "priya.desai@company.com"),
+                Map.entry("Zakaria Guerraoui", "wei.zhang@company.com"),
+                Map.entry("Karima Belkadi", "elena.moreau@company.com"),
+                Map.entry("Mehdi Cherkaoui", "mehdi.cherkaoui@company.com")
         );
         for (int i = 0; i < overrides.size() && i < employeeSeeds.size(); i++) {
             employeeSeeds.get(i).put("full_name", overrides.get(i).getKey());
@@ -418,7 +418,7 @@ public class SeedRunner implements CommandLineRunner {
 
         System.out.println("\nSeed complete. Demo accounts:");
         System.out.println("  admin@hr.com / " + adminPassword);
-        System.out.println("  jordan.blake@company.com (manager) / " + adminPassword);
+        System.out.println("  mehdi.cherkaoui@company.com (manager) / " + adminPassword);
         System.out.println("  sarah.chen@company.com (employee) / " + employeePassword);
         System.out.println("  marcus.reyes@company.com (employee) / " + employeePassword);
         System.out.println("  priya.desai@company.com (employee) / " + employeePassword);

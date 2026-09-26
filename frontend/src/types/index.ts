@@ -73,6 +73,7 @@ export interface Employee {
   skills?: EmployeeSkill[];
   flight_risk?: FlightRiskResult;
   turnover_model?: TurnoverRiskResult;
+  manager_name?: string | null;
 }
 
 export interface FlightRiskLeverSuggestion {
@@ -132,6 +133,7 @@ export interface Ticket {
   resolution_note: string | null;
   created_at: string;
   resolved_at: string | null;
+  assigned_to: string | null;
 }
 
 export interface AttendanceAnomaly {

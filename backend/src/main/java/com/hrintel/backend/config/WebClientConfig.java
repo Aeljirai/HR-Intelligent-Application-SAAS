@@ -10,11 +10,11 @@ import org.springframework.http.codec.json.Jackson2JsonEncoder;
 import org.springframework.web.reactive.function.client.WebClient;
 
 /**
- * Named WebClient beans, one per downstream HTTP dependency. Mirrors the four
- * places the old Node backend made outbound HTTP calls: the Supabase REST
- * (PostgREST) API via the service-role key, the Supabase Auth API (used both
- * to verify a caller's access token and, from the seed runner, to manage demo
- * users), the ml-service microservice, and a local Ollama server.
+ * Named WebClient beans, one per downstream HTTP dependency: the Supabase
+ * REST (PostgREST) API via the service-role key, the Supabase Auth API (used
+ * both to verify a caller's access token and, from the seed runner, to
+ * manage demo users), the ml-service microservice, and the local Ollama
+ * server backing the Policy Copilot's LLM generation (see PolicyLlmService).
  *
  * WebClient.builder() does NOT inherit the Spring-managed, customized
  * ObjectMapper (the one JacksonConfig applies the snake_case naming strategy

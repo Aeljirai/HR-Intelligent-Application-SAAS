@@ -115,6 +115,25 @@ Level Security by design, the same way the backend's service-role client
 does, since this is a trusted server-side automation, not a user-facing
 client.
 
+## Test workflow (random data, no Supabase required)
+
+`n8n/workflows/daily-hr-report-test.json` is a standalone copy for trying out
+the email flow without touching real data:
+
+- Trigger is a **Manual Trigger** (run it on demand from the n8n editor)
+  instead of the daily schedule.
+- **Generate Random Employee Data** / **Generate Random Timesheet Data**
+  (Code nodes) fabricate 8–12 rows each with random names, departments,
+  statuses, and hours — no Supabase calls, so it works even without
+  `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` configured.
+- The **Email HR Admin (Test)** node sends from a fixed address
+  (`al_eljirari@etu.enset-media.ac.ma`) to whatever `HR_ADMIN_EMAIL` is set
+  to, subject-prefixed `[TEST]` so it's never mistaken for the real report.
+
+Import it the same way (**Workflows → Import from File**), attach the same
+SMTP credential to its **Email HR Admin (Test)** node, and run it manually.
+It does not affect or replace `daily-hr-report.json`.
+
 ## Customizing
 
 - **Add more fields** — extend the `select=` query parameter on the

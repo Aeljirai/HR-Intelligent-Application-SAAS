@@ -13,6 +13,7 @@ public record Ticket(
         boolean tier0Resolved,
         String resolutionNote,
         String createdAt,
-        String resolvedAt
+        String resolvedAt,
+        String assignedTo
 ) {
 }

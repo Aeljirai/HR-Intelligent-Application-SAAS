@@ -30,7 +30,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handlePolicyLlmUnavailable(PolicyLlmUnavailableException ex) {
         log.warn("Policy assistant unavailable: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
-                "error", "Policy assistant is not configured. Make sure Ollama is running (ollama serve) and restart the backend."
+                "error", "Policy assistant is not available. Make sure Ollama is running and OLLAMA_MODEL is pulled, then restart the backend."
         ));
     }
 

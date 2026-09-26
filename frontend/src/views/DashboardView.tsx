@@ -132,6 +132,10 @@ function EmployeeDashboard() {
     <PageContainer>
       <PageHeader title={t('dashboard.welcomeBack', { name: emp.full_name.split(' ')[0]! })} subtitle={emp.job_title} />
 
+      <div className="mb-6">
+        <CompetitorIntelFeed />
+      </div>
+
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatTile label={t('dashboard.ptoBalance')} value={`${emp.pto_balance.toFixed(1)} days`} />
         <StatTile label={t('dashboard.performanceScore')} value={emp.performance_score.toFixed(0)} />

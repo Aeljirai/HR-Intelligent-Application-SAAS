@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -9,6 +9,9 @@ on:
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
 
 jobs:
   frontend:
@@ -70,35 +73,130 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-python@v5
         with:
-          bun-version: latest
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ml-service/requirements-dev.txt
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: pip install -r requirements-dev.txt
 
-      - name: Typecheck
-        run: bun run typecheck
+      - name: Test
+        run: pytest -v
 
-      - name: Build
-        run: bun run build
-
-  docker-build:
-    name: Docker image builds
+  # Builds every service's Dockerfile on every PR/push (a build-only check,
+  # same as before), and additionally pushes to GHCR when the push lands on
+  # main — one job instead of build-then-separately-push since GitHub-hosted
+  # runners have Docker natively available (no docker:dind sidecar needed,
+  # unlike the GitLab pipeline this mirrors).
+  build-and-push:
+    name: Build & push (${{ matrix.service }})
     runs-on: ubuntu-latest
     needs: [frontend, backend, ml-service]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - service: backend
+            context: ./backend
+          - service: frontend
+            context: ./frontend
+          - service: ml-service
+            context: ./ml-service
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build backend image
-        run: docker build -t hr-intel-backend:ci ./backend
+      - name: Compute lowercase image name
+        id: image
+        run: echo "name=$(echo '${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
-      - name: Build ml-service image
-        run: docker build -t hr-intel-ml-service:ci ./ml-service
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build frontend image
+      # Real values only matter for the image that actually gets pushed and
+      # deployed — Vite bakes these in at build time (see frontend/Dockerfile).
+      # PR builds keep using harmless placeholders just to prove the build
+      # succeeds, same as before.
+      - name: Set frontend build args
+        id: frontend-args
+        if: matrix.service == 'frontend'
         run: |
-          docker build -t hr-intel-frontend:ci ./frontend \
-            --build-arg VITE_SUPABASE_URL=https://placeholder.supabase.co \
-            --build-arg VITE_SUPABASE_ANON_KEY=placeholder-anon-key \
-            --build-arg VITE_API_BASE_URL=http://localhost:4000
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            {
+              echo "VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}"
+              echo "VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}"
+              echo "VITE_API_BASE_URL=${{ secrets.VITE_API_BASE_URL }}"
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              echo "VITE_SUPABASE_URL=https://placeholder.supabase.co"
+              echo "VITE_SUPABASE_ANON_KEY=placeholder-anon-key"
+              echo "VITE_API_BASE_URL=http://localhost:4000"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+          build-args: |
+            VITE_SUPABASE_URL=${{ steps.frontend-args.outputs.VITE_SUPABASE_URL }}
+            VITE_SUPABASE_ANON_KEY=${{ steps.frontend-args.outputs.VITE_SUPABASE_ANON_KEY }}
+            VITE_API_BASE_URL=${{ steps.frontend-args.outputs.VITE_API_BASE_URL }}
+
+  # Manual-gate this in GitHub: Settings -> Environments -> "production" ->
+  # add required reviewers. Without that protection rule, this runs
+  # automatically on every push to main (there is no YAML-level equivalent
+  # of GitLab's `when: manual` — environment protection rules are how
+  # GitHub Actions expresses the same "someone has to click approve" gate).
+  #
+  # Written for a GCP Compute Engine VM reached via `gcloud compute ssh`,
+  # matching the .gitlab-ci.yml deploy job — see that file's comments for
+  # why (no k8s/Cloud Run config in this repo to suggest otherwise) and for
+  # the docker-compose.prod.yml caveat (the committed docker-compose.yml
+  # uses `build:`, not `image:` — the production host needs an override
+  # file with `image:` references for a pull-based deploy to actually pull
+  # rather than rebuild from source).
+  deploy:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: read
+    environment:
+      name: production
+      url: https://${{ vars.PRODUCTION_HOST }}
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Pull images and redeploy
+        run: |
+          IMAGE_BASE=$(echo "${{ env.REGISTRY }}/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          gcloud compute ssh "${{ vars.GCP_INSTANCE_NAME }}" --zone="${{ vars.GCP_ZONE }}" --command="
+            set -e
+            echo '${{ secrets.GITHUB_TOKEN }}' | docker login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+            docker pull $IMAGE_BASE/backend:${{ github.sha }}
+            docker pull $IMAGE_BASE/frontend:${{ github.sha }}
+            docker pull $IMAGE_BASE/ml-service:${{ github.sha }}
+            cd ${{ vars.PRODUCTION_APP_DIR }}
+            BACKEND_IMAGE_TAG=${{ github.sha }} FRONTEND_IMAGE_TAG=${{ github.sha }} ML_SERVICE_IMAGE_TAG=${{ github.sha }} \
+              docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+          "

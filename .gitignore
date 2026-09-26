@@ -6,3 +6,9 @@ target/
 .env.local
 *.log
 .DS_Store
+
+# Python (ml-service)
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

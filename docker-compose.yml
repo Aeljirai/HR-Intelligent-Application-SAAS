@@ -9,7 +9,7 @@ services:
     expose:
       - "4100"
     healthcheck:
-      test: ["CMD", "bun", "-e", "fetch('http://localhost:4100/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "curl", "-f", "http://localhost:4100/health"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -23,17 +23,16 @@ services:
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
       ML_SERVICE_URL: http://ml-service:4100
-      # host.docker.internal reaches the Ollama server running on the host
-      # machine (Docker Desktop only) — the container's own "localhost"
-      # would refer to the container itself.
+      # Ollama runs on the host, not in a container — host.docker.internal
+      # lets the backend container reach it (Docker Desktop on Win/Mac; on
+      # Linux add `extra_hosts: ["host.docker.internal:host-gateway"]` or
+      # point this at the host's LAN IP instead).
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-deepseek-r1:8b}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Admin123!}
       SEED_EMPLOYEE_PASSWORD: ${SEED_EMPLOYEE_PASSWORD:-Employee123!}
     ports:
       - "4000:4000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       ml-service:
         condition: service_healthy

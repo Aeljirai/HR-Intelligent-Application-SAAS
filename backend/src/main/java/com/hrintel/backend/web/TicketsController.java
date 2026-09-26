@@ -20,11 +20,15 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** A 1:1 port of routes/tickets.routes.ts. */
 @RestController
 @RequestMapping("/api/tickets")
 public class TicketsController {
+
+    private static final List<String> URGENCY_RANK = List.of("low", "medium", "high", "critical");
+    private static final Set<String> VALID_CATEGORIES = Set.of("pto", "benefits", "payroll", "it", "facilities", "conduct", "other");
 
     private final SupabaseDataService data;
     private final MlServiceClient ml;
@@ -66,32 +70,56 @@ public class TicketsController {
         Employee employee = data.getEmployeeById(employeeId)
                 .orElseThrow(() -> ApiException.notFound("Employee not found"));
 
+        if (body.category() != null && !VALID_CATEGORIES.contains(body.category())) {
+            throw ApiException.badRequest("Unknown ticket category: " + body.category());
+        }
+        if (body.priority() != null && !URGENCY_RANK.contains(body.priority())) {
+            throw ApiException.badRequest("Unknown ticket priority: " + body.priority());
+        }
+
         String fullText = body.subject() + ". " + body.description();
         SentimentAnalysis analysis = ml.analyzeTicketText(fullText, employee);
+
+        // The employee picks a type + priority in the composer; the NLP pass still
+        // runs on the raw text so a mislabeled ticket can't suppress a safety-critical
+        // auto-escalation (e.g. conduct/harassment content, or a "critical" keyword hit).
+        String finalCategory = body.category() != null ? body.category() : analysis.category();
+        String finalUrgency = higherUrgency(body.priority(), analysis.urgency());
+        boolean conductFlagged = "conduct".equals(finalCategory) || "conduct".equals(analysis.category());
+        boolean escalate = "critical".equals(finalUrgency)
+                || conductFlagged
+                || ("high".equals(finalUrgency) && "negative".equals(analysis.sentiment().label()));
 
         Map<String, Object> fields = new LinkedHashMap<>();
         fields.put("employee_id", employeeId);
         fields.put("subject", body.subject());
         fields.put("description", body.description());
-        fields.put("category", analysis.category());
+        fields.put("category", finalCategory);
         fields.put("sentiment_label", analysis.sentiment().label());
         fields.put("sentiment_score", analysis.sentiment().score());
-        fields.put("urgency", analysis.urgency());
-        fields.put("status", analysis.tier0().resolved() ? "auto_resolved" : analysis.routing().escalate() ? "escalated" : "open");
+        fields.put("urgency", finalUrgency);
+        fields.put("status", analysis.tier0().resolved() ? "auto_resolved" : escalate ? "escalated" : "open");
         fields.put("tier0_resolved", analysis.tier0().resolved());
         fields.put("resolution_note", analysis.tier0().note());
         fields.put("resolved_at", analysis.tier0().resolved() ? Instant.now().toString() : null);
+        fields.put("assigned_to", employee.managerId());
 
         Ticket ticket = data.insertTicket(fields);
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("ticket", ticket);
         response.put("sentiment", analysis.sentiment());
-        response.put("urgency", analysis.urgency());
-        response.put("category", analysis.category());
+        response.put("urgency", finalUrgency);
+        response.put("category", finalCategory);
         response.put("routing", analysis.routing());
         response.put("tier0", analysis.tier0());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+    /** Never lets a manual priority pick downgrade what the NLP pass already detected. */
+    private static String higherUrgency(String manual, String detected) {
+        if (manual == null) return detected;
+        return URGENCY_RANK.indexOf(manual) >= URGENCY_RANK.indexOf(detected) ? manual : detected;
     }
 
     @PatchMapping("/{id}/status")

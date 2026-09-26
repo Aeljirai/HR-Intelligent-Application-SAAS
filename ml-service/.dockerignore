@@ -1,4 +1,9 @@
-node_modules
-dist
+__pycache__
+*.pyc
+.pytest_cache
+.venv
 .env
 *.log
+tests
+data
+scripts

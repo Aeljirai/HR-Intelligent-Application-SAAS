@@ -14,7 +14,7 @@ app:
     service-role-key: ${SUPABASE_SERVICE_ROLE_KEY}
   ollama:
     base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-    model: ${OLLAMA_MODEL:llama3.1}
+    model: ${OLLAMA_MODEL:deepseek-r1:8b}
   seed:
     admin-password: ${SEED_ADMIN_PASSWORD:Admin123!}
     employee-password: ${SEED_EMPLOYEE_PASSWORD:Employee123!}

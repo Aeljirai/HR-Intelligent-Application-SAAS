@@ -1,7 +1,8 @@
 # HR Intelligence System
 
 A full-stack HR analytics platform: React (built/run with Bun) on the frontend,
-a Spring Boot (Java) API in the middle, a dedicated ML computation service, and
+a Spring Boot (Java) API in the middle, a dedicated ML computation service
+(FastAPI / Python), and
 Supabase (Postgres + Auth + Row Level Security) as the database. Predictive/ML
 features (anomaly detection, headcount forecasting, flight-risk scoring,
 sentiment analysis, org-network analysis, shift optimization, resource
@@ -44,7 +45,7 @@ sandbox, shift optimization, resource reallocation) with no database
 connection and no inbound access from anywhere but the backend container.
 The backend fetches rows from Supabase as before, POSTs them to ml-service,
 and gets the computed result back — this keeps the ML logic independently
-testable/deployable (see `ml-service/scripts/smoke-test-ml.ts`) without
+testable/deployable (see `ml-service/tests/test_smoke.py`) without
 giving it any credentials it doesn't need. The NL command parser
 (`web/AgentController.java` / `service/NlCommandService.java`) stayed in the
 backend since it's tightly coupled to role-based routing, not a standalone
@@ -106,7 +107,7 @@ start) — `docker compose up --build frontend`.
 | Role | Email | Password |
 |---|---|---|
 | Admin | admin@hr.com | Admin123! |
-| Manager | jordan.blake@company.com | Admin123! |
+| Manager | mehdi.cherkaoui@company.com | Admin123! |
 | Employee | sarah.chen@company.com | Employee123! |
 | Employee | marcus.reyes@company.com | Employee123! |
 | Employee | priya.desai@company.com | Employee123! |
@@ -125,10 +126,10 @@ start) — `docker compose up --build frontend`.
    gap vs. market, overtime load, time since last vacation), explained as
    individually weighted factors. Alongside it, a second, independently
    computed **turnover model** score comes from a hand-rolled Random Forest
-   (`ml-service/src/ml/turnoverModel.ts`) ported from the Kaggle notebook
+   (`ml-service/app/ml/turnover_model.py`) ported from the Kaggle notebook
    [dalekube/employee-flight-risk-model](https://www.kaggle.com/code/dalekube/employee-flight-risk-model)
-   — trained offline once (`bun run train:turnover-model` in `ml-service/`,
-   see `scripts/train-turnover-model.ts`) on the public `HR_comma_sep.csv`
+   — trained offline once (`python scripts/train_turnover_model.py` in
+   `ml-service/`, see `scripts/train_turnover_model.py`) on the public `HR_comma_sep.csv`
    dataset (CC0) and shipped as a committed JSON artifact; nothing is
    trained at runtime. That dataset is a different population than this
    app's own seeded employees, so treat its probability as
@@ -197,11 +198,12 @@ latency would otherwise be felt.
 
 ## Testing
 
-`ml-service/scripts/smoke-test-ml.ts` is a zero-dependency sanity check for
-every pure ML/analytics function (flight risk, sentiment/Tier-0, anomaly
-detection, headcount forecast, ONA graph roles, shift optimization, resource
-reallocation, compensation sandbox) against hand-built fixtures with known
-expected outcomes — run it with `bun run smoke-test` from `ml-service/`.
+`ml-service/tests/test_smoke.py` is a sanity check for every pure ML/analytics
+function (flight risk, sentiment/Tier-0, anomaly detection, headcount
+forecast, ONA graph roles, shift optimization, resource reallocation,
+compensation sandbox, turnover model) against hand-built fixtures with known
+expected outcomes — run it with `pytest` from `ml-service/` (after
+`pip install -r requirements-dev.txt`).
 `backend/src/test/java/.../service/NlCommandServiceTest.java` is the
 equivalent for NL command parsing (`parseCommand`), run with `./mvnw test`
 from `backend/` (that also runs `TurnoverFeatureMapperTest` and

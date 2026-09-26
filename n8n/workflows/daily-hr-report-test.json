@@ -1,0 +1,133 @@
+{
+  "id": "dailyHrReportTest01",
+  "name": "Daily HR Report — TEST (Random Data)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manualTrigger",
+      "name": "Manual Trigger (Test Run)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-220, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst iso = now.toISOString().slice(0, 10);\nconst label = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });\nreturn [{ json: { reportDate: iso, reportDateLabel: label } }];"
+      },
+      "id": "config",
+      "name": "Compute Report Date",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [0, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "function randomItem(arr) { return arr[Math.floor(Math.random() * arr.length)]; }\nfunction randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }\n\nconst firstNames = ['Amina','Youssef','Sara','Karim','Lina','Omar','Nadia','Hassan','Imane','Yassine','Salma','Rachid','Fatima','Adil','Meryem','Anas'];\nconst lastNames = ['El Amrani','Bouzid','Chraibi','Idrissi','Tazi','Benali','Fassi','Alaoui','Ziani','Bennis'];\nconst departments = ['Engineering','Sales','Marketing','HR','Finance','Operations','Support','Legal'];\nconst jobTitles = ['Software Engineer','Sales Representative','Marketing Specialist','HR Coordinator','Financial Analyst','Operations Manager','Support Agent','Legal Counsel'];\nconst seniorities = ['junior','mid','senior','lead'];\nconst contractTypes = ['full_time','part_time','contract','intern'];\nconst statuses = ['active','on_leave','terminated'];\n\nconst rows = [];\nconst count = randomInt(8, 12);\nfor (let i = 0; i < count; i++) {\n  const first = randomItem(firstNames);\n  const last = randomItem(lastNames);\n  rows.push({\n    json: {\n      'Full Name': `${first} ${last}`,\n      'Email': `${first}.${last}`.toLowerCase().replace(/\\s+/g, '') + '@example.com',\n      'Department': randomItem(departments),\n      'Job Title': randomItem(jobTitles),\n      'Seniority': randomItem(seniorities),\n      'Contract Type': randomItem(contractTypes),\n      'Status': randomItem(statuses),\n      'Performance Score': randomInt(50, 100),\n    },\n  });\n}\nreturn rows;"
+      },
+      "id": "genEmployees",
+      "name": "Generate Random Employee Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "function randomItem(arr) { return arr[Math.floor(Math.random() * arr.length)]; }\nfunction randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }\nfunction pad(n) { return String(n).padStart(2, '0'); }\n\nconst firstNames = ['Amina','Youssef','Sara','Karim','Lina','Omar','Nadia','Hassan','Imane','Yassine','Salma','Rachid','Fatima','Adil','Meryem','Anas'];\nconst lastNames = ['El Amrani','Bouzid','Chraibi','Idrissi','Tazi','Benali','Fassi','Alaoui','Ziani','Bennis'];\nconst departments = ['Engineering','Sales','Marketing','HR','Finance','Operations','Support','Legal'];\nconst statuses = ['present','late','absent'];\nconst reportDate = $('Compute Report Date').item.json.reportDate;\n\nconst rows = [];\nconst count = randomInt(8, 12);\nfor (let i = 0; i < count; i++) {\n  const status = randomItem(statuses);\n  const checkInHour = randomInt(7, 9);\n  const checkInMin = randomInt(0, 59);\n  const hoursWorked = status === 'absent' ? 0 : randomInt(6, 9);\n  const checkIn = status === 'absent' ? '' : `${pad(checkInHour)}:${pad(checkInMin)}`;\n  const checkOut = status === 'absent' ? '' : `${pad(checkInHour + hoursWorked)}:${pad(checkInMin)}`;\n  rows.push({\n    json: {\n      'Full Name': `${randomItem(firstNames)} ${randomItem(lastNames)}`,\n      'Department': randomItem(departments),\n      'Date': reportDate,\n      'Status': status,\n      'Check In': checkIn,\n      'Check Out': checkOut,\n      'Hours Worked': hoursWorked,\n    },\n  });\n}\nreturn rows;"
+      },
+      "id": "genTimesheet",
+      "name": "Generate Random Timesheet Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 560]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "employees",
+        "options": {
+          "fileName": "=employee-status-report-TEST-{{ $('Compute Report Date').item.json.reportDate }}.xlsx",
+          "sheetName": "Employee Status"
+        }
+      },
+      "id": "toXlsxEmployees",
+      "name": "Convert Employees to XLSX",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [480, 140]
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "binaryPropertyName": "timesheet",
+        "options": {
+          "fileName": "=timesheet-report-TEST-{{ $('Compute Report Date').item.json.reportDate }}.xlsx",
+          "sheetName": "Timesheet"
+        }
+      },
+      "id": "toXlsxTimesheet",
+      "name": "Convert Timesheet to XLSX",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [480, 560]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "mergeFiles",
+      "name": "Combine Attachments",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [700, 340]
+    },
+    {
+      "parameters": {
+        "fromEmail": "al_eljirari@etu.enset-media.ac.ma",
+        "toEmail": "={{ $env.HR_ADMIN_EMAIL }}",
+        "subject": "=[TEST] Daily HR Report (Random Data) — {{ $('Compute Report Date').item.json.reportDateLabel }}",
+        "emailFormat": "html",
+        "html": "=<p>This is a <strong>TEST</strong> run with randomly generated data, attached for <strong>{{ $('Compute Report Date').item.json.reportDateLabel }}</strong>:</p><ul><li><strong>Employee status report</strong> — randomly generated status, performance score, and contract type.</li><li><strong>Timesheet report</strong> — randomly generated worked hours.</li></ul><p>None of this data is real. This message was sent by the HR Intelligence System test workflow.</p>",
+        "attachments": "employees,timesheet",
+        "options": {}
+      },
+      "id": "sendEmail",
+      "name": "Email HR Admin (Test)",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [920, 340],
+      "credentials": {
+        "smtp": { "id": "REPLACE_ME", "name": "SMTP account" }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger (Test Run)": {
+      "main": [[{ "node": "Compute Report Date", "type": "main", "index": 0 }]]
+    },
+    "Compute Report Date": {
+      "main": [[
+        { "node": "Generate Random Employee Data", "type": "main", "index": 0 },
+        { "node": "Generate Random Timesheet Data", "type": "main", "index": 0 }
+      ]]
+    },
+    "Generate Random Employee Data": {
+      "main": [[{ "node": "Convert Employees to XLSX", "type": "main", "index": 0 }]]
+    },
+    "Generate Random Timesheet Data": {
+      "main": [[{ "node": "Convert Timesheet to XLSX", "type": "main", "index": 0 }]]
+    },
+    "Convert Employees to XLSX": {
+      "main": [[{ "node": "Combine Attachments", "type": "main", "index": 0 }]]
+    },
+    "Convert Timesheet to XLSX": {
+      "main": [[{ "node": "Combine Attachments", "type": "main", "index": 1 }]]
+    },
+    "Combine Attachments": {
+      "main": [[{ "node": "Email HR Admin (Test)", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

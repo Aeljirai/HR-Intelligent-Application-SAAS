@@ -20,6 +20,8 @@ import type {
   ReallocationSuggestion,
   ShiftPlan,
   Ticket,
+  TicketCategory,
+  TicketUrgency,
   TwinEmployeesResult,
   WellbeingClub,
   WellbeingRequest,
@@ -46,8 +48,8 @@ export function useHeadcountForecast(months = 6) {
 }
 
 // ---- Employees ------------------------------------------------------------
-export function useEmployees() {
-  return useQuery({ queryKey: ['employees'], queryFn: () => api.get<Employee[]>('/employees') });
+export function useEmployees(enabled = true) {
+  return useQuery({ queryKey: ['employees'], queryFn: () => api.get<Employee[]>('/employees'), enabled });
 }
 export function useMyEmployee(enabled = true) {
   return useQuery({ queryKey: ['employees', 'me'], queryFn: () => api.get<Employee>('/employees/me'), enabled });
@@ -102,7 +104,8 @@ export function useTickets() {
 export function useCreateTicket() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { subject: string; description: string }) => api.post('/tickets', payload),
+    mutationFn: (payload: { subject: string; description: string; category?: TicketCategory; priority?: TicketUrgency }) =>
+      api.post('/tickets', payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tickets'] }),
   });
 }

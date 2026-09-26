@@ -119,7 +119,10 @@ public class EmployeesController {
         FlightRiskResult flightRisk = ml.computeFlightRisk(employee, null);
         TurnoverRiskResult turnoverRisk = ml.computeTurnoverRisk(employee.id(), turnoverItem.features());
 
-        return enrich(employee, skills, flightRisk, turnoverRisk);
+        Map<String, Object> json = enrich(employee, skills, flightRisk, turnoverRisk);
+        json.put("manager_name", employee.managerId() == null ? null
+                : data.getEmployeeById(employee.managerId()).map(Employee::fullName).orElse(null));
+        return json;
     }
 
     /** What-if flight-risk simulation — HR staff only. */

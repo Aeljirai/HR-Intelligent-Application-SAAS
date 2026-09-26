@@ -43,7 +43,7 @@ export function OnboardingTrackerView() {
     setStatuses(STAGE_KEYS.map(() => 'pending'));
     setLog([]);
     setRunning(true);
-    pushLog('redis:publish → channel "onboarding.events" → { type: "onboarding.started", hire: "John Doe" }');
+    pushLog('redis:publish → channel "onboarding.events" → { type: "onboarding.started", hire: "Yassine El Amrani" }');
 
     STAGE_KEYS.forEach((stage, i) => {
       const startAt = i * STAGE_DURATION_MS;
@@ -59,7 +59,7 @@ export function OnboardingTrackerView() {
           setStatuses((s) => s.map((st, idx) => (idx === i ? 'completed' : st)));
           pushLog(`redis:publish → { type: "stage.completed", stage: "${stage.id}" }`);
           if (i === STAGE_KEYS.length - 1) {
-            pushLog('redis:publish → { type: "onboarding.completed", hire: "John Doe" }');
+            pushLog('redis:publish → { type: "onboarding.completed", hire: "Yassine El Amrani" }');
             setRunning(false);
           }
         }, startAt + STAGE_DURATION_MS * 0.7)

@@ -53,7 +53,7 @@ const ATTENDANCE_TOPIC = /\battendance\b/i;
 const PERSONAL_INFO_TOPIC = /\bpersonal (info|information|details)\b|\b(home address|phone number|date of birth|social security|ssn|pto balance|leave balance|vacation balance)\b/i;
 const AGGREGATE_EXCEPTION = /\b(average|median|range|company-wide|companywide|overall|typical|total payroll|compensation gap)\b/i;
 const SELF_REFERENCE = /\b(my|i|me|mine)\b/i;
-const THIRD_PARTY_HINT = /\b(he|she|him|her|his|hers|they|them|their|someone else|another employee|other employee|coworker|colleague)\b/i;
+const THIRD_PARTY_HINT = /\b(he|she|him|her|his|hers|they|them|their|someone else|another employee|other employee|coworker|colleague|manager|boss|supervisor|director|teammate|direct report)\b/i;
 /** Case-sensitive, and requires a preceding space (not just a word boundary) so a sentence-initial capital — "What's my salary?" — is never mistaken for a person's name. */
 const NAMED_OTHER = /(?<=\s)[A-Z][a-zA-Z'-]{1,30}(?:'s\b|\s+(?:make|makes|earn|earns|earning|get paid|is paid))/;
 

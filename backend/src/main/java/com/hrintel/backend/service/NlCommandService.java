@@ -49,12 +49,12 @@ public class NlCommandService {
     );
     private static final Pattern SELF_REFERENCE = Pattern.compile("\\b(my|i|me|mine)\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern THIRD_PARTY_HINT = Pattern.compile(
-            "\\b(he|she|him|her|his|hers|they|them|their|someone else|another employee|other employee|coworker|colleague)\\b",
+            "\\b(he|she|him|her|his|hers|they|them|their|someone else|another employee|other employee|coworker|colleague|manager|boss|supervisor|director|teammate|direct report)\\b",
             Pattern.CASE_INSENSITIVE
     );
     /**
      * Deliberately case-sensitive — a capitalized token used as the subject of a private-topic
-     * verb, e.g. "Sarah's" or "does Sarah make". Requires a preceding space (not just a word
+     * verb, e.g. "Salma's" or "does Salma make". Requires a preceding space (not just a word
      * boundary) so a sentence-initial capital — "What's my salary?", "Is my PTO balance..." —
      * is never mistaken for a person's name; only a capitalized word appearing mid-sentence counts.
      */
